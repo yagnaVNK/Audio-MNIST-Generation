@@ -1,2 +1,9 @@
 Data
 VirtualEnv
+/run/lightning_logs
+*.pyc
+/run/checkpoints/
+/run/src/__pycache__
+run/results
+*.pyc
+/run/src/__pycache__

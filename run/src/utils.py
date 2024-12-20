@@ -1,0 +1,10 @@
+block_size = 737
+codebook_slots= 512
+vocab_size = codebook_slots
+n_head = 8
+n_layer = 8
+n_embd = 16
+dropout = 0.1
+epochs = 10
+device = 'cuda'
+TRANSFORMER_MODEL_PATH = f'src/SavedModels/Transformer_epochs_{epochs}.pt'

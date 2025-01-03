@@ -11,8 +11,9 @@ import matplotlib.pyplot as plt
 from sklearn.metrics import confusion_matrix
 import pandas as pd
 from datetime import datetime
-
-from src.Dataset import AudioDataset
+import src.custom_transforms as CT
+import torchvision.transforms as T
+from src.Dataset import AudioMNIST
 from src.Classifier import LightningAudioClassifier
 
 def save_model(model, save_path):
@@ -69,11 +70,17 @@ def main(args):
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     results_dir = os.path.join("results", f"run_{timestamp}")
     os.makedirs(results_dir, exist_ok=True)
+
+    transforms = [
+        CT.TrimSilence(5),
+        CT.TimeStretchFixLength(args.target_length)
+    ]
     
     # Initialize dataset
-    full_dataset = AudioDataset(
-        root_dir=args.data_dir,
-        target_length=args.target_length
+    full_dataset = AudioMNIST(
+        root = args.data_dir,
+        target_sample_rate=args.target_length,
+        transform = T.Compose(transforms)
     )
     
     # Calculate splits
@@ -138,7 +145,7 @@ def main(args):
         logger=logger,
         gradient_clip_val=args.grad_clip
     )
-
+    
     # Train model
     trainer.fit(
         model,
@@ -185,13 +192,13 @@ if __name__ == '__main__':
     # Program arguments
     parser.add_argument('--data_dir', type=str, default='../Data',
                         help='Directory containing the dataset')
-    parser.add_argument('--target_length', type=int, default=47998,
+    parser.add_argument('--target_length', type=int, default=22050,
                         help='Target length for audio waveforms')
     
     # Training arguments
     parser.add_argument('--batch_size', type=int, default=32)
-    parser.add_argument('--max_epochs', type=int, default=10)
-    parser.add_argument('--learning_rate', type=float, default=1e-3)
+    parser.add_argument('--max_epochs', type=int, default=40)
+    parser.add_argument('--learning_rate', type=float, default=1e-5)
     parser.add_argument('--num_workers', type=int, default=4)
     parser.add_argument('--grad_clip', type=float, default=1.0)
 

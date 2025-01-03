@@ -156,7 +156,7 @@ class VQCodebook(nn.Module):
 class VQVAE(pl.LightningModule):
     def __init__(
         self,
-        in_channels=1,
+        in_channels=2,
         hidden_dim=128,
         num_res_blocks=2,
         codebook_dim=32,

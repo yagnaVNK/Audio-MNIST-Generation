@@ -13,8 +13,19 @@ class ResBlock2D(nn.Module):
         self.conv_2 = nn.Conv2d(channel, in_channel, kernel_size=3, padding=1)
         self.bn_2 = nn.BatchNorm2d(in_channel)
         self.activation = nn.ReLU()
+        
+        # Initialize weights as float32
+        self.conv_1.weight.data = self.conv_1.weight.data.to(torch.float32)
+        self.conv_2.weight.data = self.conv_2.weight.data.to(torch.float32)
+        if self.conv_1.bias is not None:
+            self.conv_1.bias.data = self.conv_1.bias.data.to(torch.float32)
+        if self.conv_2.bias is not None:
+            self.conv_2.bias.data = self.conv_2.bias.data.to(torch.float32)
 
     def forward(self, inp):
+        # Ensure input is float32
+        inp = inp.to(torch.float32)
+        
         x = self.conv_1(inp)
         x = self.bn_1(x)
         x = self.activation(x)
@@ -101,13 +112,14 @@ class VQCodebook(nn.Module):
         self.log_slots_const = np.log(self.codebook_slots)
 
     def ze_to_zq(self, ze, soft=True):
+        ze = ze.to(torch.float32) 
         bs, feat_dim, h, w = ze.shape
         assert feat_dim == self.codebook_dim
         
         ze = ze.permute(0, 2, 3, 1).contiguous()
         z_e_flat = ze.view(-1, feat_dim)
         
-        codebook = self.codebook.weight
+        codebook = self.codebook.weight.to(torch.float32)
         codebook_sqr = torch.sum(codebook ** 2, dim=1)
         z_e_flat_sqr = torch.sum(z_e_flat ** 2, dim=1, keepdim=True)
         
@@ -152,6 +164,7 @@ class VQCodebook(nn.Module):
     def lookup(self, indices):
         z_q = self.codebook(indices)
         return z_q.permute(0, 3, 1, 2).contiguous()
+    
 
 class VQVAE(pl.LightningModule):
     def __init__(
@@ -167,6 +180,11 @@ class VQVAE(pl.LightningModule):
     ):
         super().__init__()
         self.save_hyperparameters()
+        
+        # Convert all coefficients to float32 tensors
+        self.KL_coeff = torch.tensor(KL_coeff, dtype=torch.float32)
+        self.CL_coeff = torch.tensor(CL_coeff, dtype=torch.float32)
+        self.reset_threshold = torch.tensor(reset_threshold, dtype=torch.float32)
         
         self.Encoder = Encoder2D(
             in_feat_dim=in_channels,
@@ -187,10 +205,7 @@ class VQVAE(pl.LightningModule):
             num_res_blocks=num_res_blocks
         )
         
-        self.KL_coeff = KL_coeff
-        self.CL_coeff = CL_coeff
-        self.reset_threshold = reset_threshold
-        
+
     def on_train_start(self):
         # Initialize code usage tracking on CPU
         self.register_buffer('code_count', torch.zeros(self.codebook.codebook_slots, device='cpu'))
@@ -231,6 +246,7 @@ class VQVAE(pl.LightningModule):
             #print(f"Reset code {min_used_code.item()} (usage: {min_frac_usage.item():.3f})")
 
     def forward(self, x):
+        x=x.float()
         ze = self.Encoder(x)
         zq, indices, KL_loss, commit_loss = self.codebook.ze_to_zq(ze, soft=True)
         x_recon = self.Decoder(zq)
@@ -248,7 +264,6 @@ class VQVAE(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         x, _ = batch
-        x = x.unsqueeze(1)
         x_recon, ze, zq, indices, KL_loss, commit_loss = self(x)
         
         # Move indices to CPU for counting
@@ -285,7 +300,6 @@ class VQVAE(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         x, _ = batch
-        x = x.unsqueeze(1)
         x_recon, ze, zq, indices, KL_loss, commit_loss = self(x)
         
         # Calculate losses normalized by dimensions
@@ -306,7 +320,13 @@ class VQVAE(pl.LightningModule):
         return loss
 
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=1e-4)
+
+        optimizer = torch.optim.Adam(
+            self.parameters(),
+            lr=1e-5,
+            weight_decay=1e-4,
+            eps=1e-4  # Added eps parameter for better numerical stability
+        )
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
             optimizer,
             mode='min',

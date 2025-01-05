@@ -1,127 +1,55 @@
 import os
 import torch
 import numpy as np
-import librosa
+import scipy
 import soundfile as sf
 import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader
 from pytorch_lightning import seed_everything
+import librosa
 
-from src.Dataset import AudioDataset
-from src.VQVAE import VQVAE
+from IPython.display import Audio
+import src.custom_transforms as CT
+import torchvision.transforms as T
+from src.Dataset import AudioMNIST
 
-def mel_to_audio(mel_spectrogram, sr=48000, n_fft=2048, hop_length=512):
-    """
-    Convert mel spectrogram back to audio using librosa
-    
-    Args:
-        mel_spectrogram (np.ndarray or torch.Tensor): Mel spectrogram 
-        sr (int): Sample rate
-        n_fft (int): FFT window size
-        hop_length (int): Hop length for reconstruction
-    
-    Returns:
-        np.ndarray: Reconstructed audio waveform
-    """
-    # Ensure input is numpy array and handle tensor input
-    if torch.is_tensor(mel_spectrogram):
-        mel_spectrogram = mel_spectrogram.cpu().numpy()
-    
-    # Ensure input is 2D
-    if mel_spectrogram.ndim == 1:
-        mel_spectrogram = mel_spectrogram.reshape(1, -1)
-    
-    # Denormalize mel spectrogram
-    mel_spectrogram = mel_spectrogram * 80 - 80
-    
-    # Convert back to power spectrum
-    mel_spectrogram = librosa.db_to_power(mel_spectrogram)
-    
-    # Reconstruct linear spectrogram 
-    # Use manual conversion instead of mel_to_stft
-    fmin = 20
-    fmax = sr // 2
-    
-    # Compute mel basis matrix
-    mel_basis = librosa.filters.mel(
-        sr=sr, 
-        n_fft=n_fft, 
-        n_mels=mel_spectrogram.shape[0], 
-        fmin=fmin, 
-        fmax=fmax
-    )
-    
-    # Pseudo-inverse to get back linear spectrogram
-    S = np.linalg.pinv(mel_basis).dot(mel_spectrogram)
-    
-    # Ensure non-negative
-    S = np.maximum(0, S)
-    
-    # Griffin-Lim reconstruction
-    y = librosa.griffinlim(
-        S, 
-        n_iter=32, 
-        hop_length=hop_length, 
-        win_length=n_fft
-    )
-    
-    # Normalize audio
-    y = librosa.util.normalize(y)
-    
-    return y
 
-def compute_reconstruction_metrics(original, reconstructed, sr=48000):
-    """
-    Compute reconstruction metrics
+def twod_to_complex(tensor: np.ndarray):
+    """Converts two channel representation back to complex signal"""
+    tmp_tensor = tensor.reshape(2, tensor.shape[1]*tensor.shape[2])
+    new_tensor = np.zeros((1, tmp_tensor.shape[1]), dtype=np.complex64)
+    new_tensor[0] = tmp_tensor[0,:] + 1j * tmp_tensor[1,:]
+    new_tensor = new_tensor.reshape(1, tensor.shape[1], tensor.shape[2])
+    return new_tensor
+
+def spectrogram_to_audio(spectrogram, sample_rate):
+    """Convert 2D spectrogram back to audio using inverse STFT"""
+    # Convert to complex representation
+    Zxx_rec = twod_to_complex(spectrogram)
     
-    Args:
-        original (np.ndarray): Original audio
-        reconstructed (np.ndarray): Reconstructed audio
-        sr (int): Sample rate
+    _, x = scipy.signal.istft(Zxx_rec, sample_rate)
     
-    Returns:
-        dict: Reconstruction metrics
-    """
+    return x.flatten()  
+
+def compute_reconstruction_metrics(original, reconstructed):
+    """Compute reconstruction metrics between original and reconstructed audio"""
     # Trim to equal lengths
     min_length = min(len(original), len(reconstructed))
     original = original[:min_length]
     reconstructed = reconstructed[:min_length]
     
-    # Compute Signal-to-Noise Ratio (SNR)
-    def snr(orig, recon):
-        signal_power = np.mean(orig**2)
-        noise_power = np.mean((orig - recon)**2)
-        return 10 * np.log10(signal_power / (noise_power + 1e-10))
-    
-    # Compute spectral similarity
-    def spectral_convergence(orig_spec, recon_spec):
-        orig_mag = np.abs(librosa.stft(orig_spec))
-        recon_mag = np.abs(librosa.stft(recon_spec))
-        
-        # Avoid division by zero
-        norm_orig = np.linalg.norm(orig_mag)
-        if norm_orig == 0:
-            return float('inf')
-        
-        return np.linalg.norm(orig_mag - recon_mag) / norm_orig
-    
     metrics = {
-        'SNR (dB)': snr(original, reconstructed),
-        'Spectral Convergence': spectral_convergence(original, reconstructed),
-        'Mean Absolute Error': np.mean(np.abs(original - reconstructed)),
-        'Root Mean Square Error': np.sqrt(np.mean((original - reconstructed)**2))
+        'MSE': np.mean((original - reconstructed) ** 2),
+        'MAE': np.mean(np.abs(original - reconstructed)),
+        'Peak SNR': 20 * np.log10(np.max(np.abs(original)) / 
+                                np.sqrt(np.mean((original - reconstructed) ** 2)))
     }
     
     return metrics
 
 def evaluate_vqvae(args):
-    """
-    Comprehensive VQVAE evaluation script
-    
-    Args:
-        args: Argument parser containing model and evaluation parameters
-    """
-    # Set random seed for reproducibility
+    """Evaluate VQVAE reconstruction quality"""
+    # Set random seed
     seed_everything(42)
     
     # Create results directory
@@ -130,28 +58,40 @@ def evaluate_vqvae(args):
     samples_dir = os.path.join(results_dir, "samples")
     os.makedirs(samples_dir, exist_ok=True)
     
-    # Load dataset
-    dataset = AudioDataset(
-        root_dir=args.data_dir, 
-        target_length=args.target_length
+    dataset = AudioMNIST(
+        root='../Data',
+        target_sample_rate=22050,
+        transform=T.Compose([
+            CT.TrimSilence(5),
+            CT.FixLength(22050//4)
+        ]),
+        output_format='spectrogram',
+        spec_params={
+            'n_fft': 512,
+            'n_freq': 128,
+            'n_time': 44,
+            'complex_output': False
+        }
     )
     
     # Create test dataloader
     test_loader = DataLoader(
-        dataset, 
-        batch_size=10, 
-        shuffle=True, 
+        dataset,
+        batch_size=10,
+        shuffle=True,
         num_workers=args.num_workers
     )
     
     # Load trained model
     model = torch.load(
-        os.path.join("results", 'vqvae_run_20241216_133830', 'final_model.pt')
+        os.path.join("results", 'vqvae_run_20250104_231557', 'final_model.pt'),
+        map_location=torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     )
     model.eval()
-    model = model.to('cuda')
+    if torch.cuda.is_available():
+        model = model.cuda()
     
-    # Tracking variables
+    # Tracking metrics
     all_metrics = []
     
     # Evaluation loop
@@ -159,86 +99,99 @@ def evaluate_vqvae(args):
         for batch_idx, (spectrograms, labels) in enumerate(test_loader):
             if batch_idx >= 10:  # Limit to first 10 batches
                 break
+                
+            # Move to GPU if available
+            if torch.cuda.is_available():
+                spectrograms = spectrograms.cuda()
             
-            # Prepare input
-            spectrograms = spectrograms.unsqueeze(1).to('cuda')
-            
-            # Reconstruct
+            # Get reconstructions
             reconstructed = model.reconstruct(spectrograms)
             
-            # Process and save samples
+            # Process each sample in batch
             for i in range(min(5, len(spectrograms))):
                 # Get original and reconstructed spectrograms
-                orig_spec = spectrograms[i].squeeze()
-                recon_spec = reconstructed[i].squeeze()
-                
-                # Get the label for this sample
+                orig_spec = spectrograms[i].cpu().numpy()
+                recon_spec = reconstructed[i].cpu().numpy()
                 label = labels[i].item()
                 
                 # Plot spectrograms
+                # Plot spectrograms
                 plt.figure(figsize=(15, 5))
+                
                 plt.subplot(121)
-                plt.title(f'Original Mel Spectrogram (Label: {label})')
-                plt.imshow(orig_spec.cpu().numpy(), aspect='auto', origin='lower')
-                plt.colorbar()
+                plt.title(f'Original Spectrogram (Label: {label})')
+                orig_spec_complex = dataset.twod_to_complex(orig_spec)
+                librosa.display.specshow(
+                    librosa.amplitude_to_db(np.abs(orig_spec_complex[0]), ref=np.max),
+                    sr=args.sample_rate,
+                    hop_length=512//4,  # Match your STFT parameters
+                    x_axis='time',
+                    y_axis='hz'
+                )
+                plt.colorbar(format='%+2.0f dB')
                 
                 plt.subplot(122)
-                plt.title(f'Reconstructed Mel Spectrogram (Label: {label})')
-                plt.imshow(recon_spec.cpu().numpy(), aspect='auto', origin='lower')
-                plt.colorbar()
+                plt.title(f'Reconstructed Spectrogram (Label: {label})')
+                recon_spec_complex = dataset.twod_to_complex(recon_spec)
+                librosa.display.specshow(
+                    librosa.amplitude_to_db(np.abs(recon_spec_complex[0]), ref=np.max),
+                    sr=args.sample_rate,
+                    hop_length=512//4,  # Match your STFT parameters
+                    x_axis='time',
+                    y_axis='hz'
+                )
+                plt.colorbar(format='%+2.0f dB')
                 
                 plt.tight_layout()
-                plt.savefig(os.path.join(samples_dir, f'1stspectrogram_label_{label}.png'))
+                plt.savefig(os.path.join(samples_dir, f'spectrogram_label_{label}_{batch_idx}_{i}.png'))
                 plt.close()
                 
                 # Convert to audio
-                orig_audio = mel_to_audio(orig_spec)
-                recon_audio = mel_to_audio(recon_spec)
+                orig_audio = spectrogram_to_audio(orig_spec, args.sample_rate)
+                recon_audio = spectrogram_to_audio(recon_spec, args.sample_rate)
                 
-                # Save audio files with label
+                # Save audio files
                 sf.write(
-                    os.path.join(samples_dir, f'1stOriginal_label{label}.wav'),
-                    orig_audio,
+                    os.path.join(samples_dir, f'original_label{label}_{batch_idx}_{i}.wav'),
+                    orig_audio,  # Now this is already a numpy array
                     args.sample_rate
                 )
                 sf.write(
-                    os.path.join(samples_dir, f'1stReconstruction_label{label}.wav'),
-                    recon_audio,
+                    os.path.join(samples_dir, f'reconstructed_label{label}_{batch_idx}_{i}.wav'),
+                    recon_audio,  # Now this is already a numpy array
                     args.sample_rate
                 )
                 
-                # Compute and store metrics
+                # Compute metrics
                 metrics = compute_reconstruction_metrics(orig_audio, recon_audio)
                 all_metrics.append(metrics)
         
         # Compute average metrics
         avg_metrics = {
-            key: np.mean([m[key] for m in all_metrics]) 
+            key: np.mean([m[key] for m in all_metrics])
             for key in all_metrics[0].keys()
         }
         
         # Save metrics
         with open(os.path.join(results_dir, 'reconstruction_metrics.txt'), 'w') as f:
-            f.write("Reconstruction Metrics:\n")
+            f.write("Average Reconstruction Metrics:\n")
             for key, value in avg_metrics.items():
-                f.write(f"{key}: {value}\n")
-                print(f"{key}: {value}")
+                f.write(f"{key}: {value:.4f}\n")
+                print(f"{key}: {value:.4f}")
 
 if __name__ == "__main__":
     from argparse import ArgumentParser
     
     parser = ArgumentParser(description="VQVAE Evaluation Script")
     
-    # Data parameters
     parser.add_argument('--data_dir', type=str, default='../Data',
                         help='Directory containing the dataset')
-    parser.add_argument('--target_length', type=int, default=47998,
+    parser.add_argument('--target_length', type=int, default=22050,
                         help='Target length for audio waveforms')
-    parser.add_argument('--sample_rate', type=int, default=48000,
+    parser.add_argument('--sample_rate', type=int, default=22050,
                         help='Audio sample rate')
     parser.add_argument('--num_workers', type=int, default=4,
                         help='Number of workers for data loading')
     
     args = parser.parse_args()
-    
     evaluate_vqvae(args)

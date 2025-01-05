@@ -10,8 +10,11 @@ import numpy as np
 from datetime import datetime
 from pathlib import Path
 from argparse import ArgumentParser
+from pytorch_lightning.loggers import TensorBoardLogger
 
-from src.Dataset import AudioDataset
+import src.custom_transforms as CT
+import torchvision.transforms as T
+from src.Dataset import AudioMNIST
 from src.VQVAE import VQVAE
 
 def plot_spectrograms(original, reconstructed, save_path):
@@ -31,32 +34,31 @@ def plot_spectrograms(original, reconstructed, save_path):
     plt.savefig(save_path)
     plt.close()
 
-def mel_to_audio(mel_spectrogram, sr=48000, n_fft=2048, hop_length=512):
-    mel_spectrogram = mel_spectrogram.cpu().numpy()
-    S = librosa.feature.inverse_melspectrogram(mel_spectrogram)
-    y = librosa.griffinlim(
-        S,
-        n_iter=32,
-        hop_length=hop_length,
-        win_length=n_fft
-    )
-    return y
-
 def main(args):
     # Set float32 matmul precision for better performance
     torch.set_float32_matmul_precision('medium')
-    
+    torch.set_default_dtype(torch.float32)
     # Create results directory
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     results_dir = os.path.join("results", f"vqvae_run_{timestamp}")
     samples_dir = os.path.join(results_dir, "samples")
     os.makedirs(results_dir, exist_ok=True)
     os.makedirs(samples_dir, exist_ok=True)
-    
-    # Initialize dataset
-    dataset = AudioDataset(
-        root_dir=args.data_dir,
-        target_length=args.target_length
+   
+    dataset = AudioMNIST(
+        root='../Data',
+        target_sample_rate=22050,
+        transform=T.Compose([
+            CT.TrimSilence(5),
+            CT.FixLength(22050//4)
+        ]),
+        output_format='spectrogram',
+        spec_params={
+            'n_fft': 512,
+            'n_freq': 128,
+            'n_time': 44,
+            'complex_output': False
+        }
     )
     
     # Split dataset
@@ -76,7 +78,8 @@ def main(args):
         batch_size=args.batch_size,
         shuffle=True,
         num_workers=args.num_workers,
-        persistent_workers=True if args.num_workers > 0 else False
+        persistent_workers=True if args.num_workers > 0 else False,
+        
     )
     
     val_loader = DataLoader(
@@ -97,7 +100,7 @@ def main(args):
     
     # Initialize model
     model = VQVAE(
-        in_channels=1,
+        in_channels=2,
         hidden_dim=args.hidden_dim,
         num_res_blocks=args.num_res_blocks,
         codebook_dim=args.codebook_dim,
@@ -120,18 +123,38 @@ def main(args):
         patience=10,
         mode='min'
     )
+    # Create TensorBoard logger
+    logger = TensorBoardLogger(
+        save_dir=results_dir,
+        name="tensorboard_logs",
+        default_hp_metric=False
+    )
+    
+    # Log hyperparameters
+    logger.log_hyperparams({
+        'hidden_dim': args.hidden_dim,
+        'num_res_blocks': args.num_res_blocks,
+        'codebook_dim': args.codebook_dim,
+        'codebook_slots': args.codebook_slots,
+        'kl_coeff': args.kl_coeff,
+        'cl_coeff': args.cl_coeff,
+        'batch_size': args.batch_size,
+        'learning_rate': args.learning_rate
+    })
     
     # Initialize trainer
+
     trainer = pl.Trainer(
         max_epochs=args.max_epochs,
         accelerator='auto',
         devices=1,
-        callbacks=[checkpoint_callback, early_stopping],
-        gradient_clip_val=args.grad_clip
+        gradient_clip_val=args.grad_clip,
+        logger=logger,  # Add this line
+        log_every_n_steps=10  # Add this line to control logging frequency
     )
     
     # Train model
-    trainer.fit(model, train_loader, val_loader)
+    trainer.fit(model.float(), train_loader, val_loader)
     
     # Save final model
     torch.save(model, os.path.join(results_dir, 'final_model.pt'))
@@ -143,9 +166,9 @@ if __name__ == "__main__":
     # Data parameters
     parser.add_argument('--data_dir', type=str, default='../Data',
                         help='Directory containing the dataset')
-    parser.add_argument('--target_length', type=int, default=47998,
+    parser.add_argument('--target_length', type=int, default=22050,
                         help='Target length for audio waveforms')
-    parser.add_argument('--sample_rate', type=int, default=48000,
+    parser.add_argument('--sample_rate', type=int, default=22050,
                         help='Audio sample rate')
     
     # Model parameters
@@ -159,14 +182,14 @@ if __name__ == "__main__":
                         help='Number of codebook entries')
     
     # Loss coefficients
-    parser.add_argument('--kl_coeff', type=float, default=0.001,
+    parser.add_argument('--kl_coeff', type=float, default=0.0001,
                         help='KL loss coefficient')
     parser.add_argument('--cl_coeff', type=float, default=0.1,
                         help='Commitment loss coefficient')
     
     # Training parameters
     parser.add_argument('--batch_size', type=int, default=32)
-    parser.add_argument('--max_epochs', type=int, default=10)
+    parser.add_argument('--max_epochs', type=int, default=400)
     parser.add_argument('--learning_rate', type=float, default=1e-4)
     parser.add_argument('--num_workers', type=int, default=4)
     parser.add_argument('--grad_clip', type=float, default=1.0)

@@ -24,7 +24,7 @@ class VQVAETrainer:
         num_workers=4,
         max_epochs=20,
         accelerator='auto',
-        devices=[0,1]
+        devices=[0]
     ):
         self.data_dir = data_dir
         self.batch_size = batch_size
@@ -127,7 +127,7 @@ class VQVAETrainer:
         
         torch.save(self.model, 'saved_models/vqvae.pth')
 
-        self.model = torch.load('saved_models/vqvae.pth')
+        #self.model = torch.load('saved_models/vqvae.pth')
 
         # Test model
         trainer.test(

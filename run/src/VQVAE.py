@@ -173,7 +173,7 @@ class VQVAE(pl.LightningModule):
         hidden_dim=128,
         num_res_blocks=2,
         codebook_dim=32,
-        codebook_slots=512,
+        codebook_slots=256,
         KL_coeff=0.001,
         CL_coeff=0.1,
         reset_threshold=0.03
@@ -211,6 +211,7 @@ class VQVAE(pl.LightningModule):
         self.register_buffer('code_count', torch.zeros(self.codebook.codebook_slots, device='cpu'))
         self.codebook_resets = 0
         
+
     def on_train_batch_start(self, batch, batch_idx):
         # Reset code count periodically
         if batch_idx % 100 == 0:
@@ -276,7 +277,7 @@ class VQVAE(pl.LightningModule):
         self.code_count = self.code_count.to(self.device)
         
         # Check for reset every 25 batches
-        if batch_idx % 25 == 0:
+        if batch_idx % 100 == 0:
             self.reset_least_used_codeword()
         
         # Calculate losses normalized by dimensions
@@ -318,6 +319,27 @@ class VQVAE(pl.LightningModule):
         self.log('val_commit_loss', commit_loss, prog_bar=True)
         
         return loss
+    
+    def _get_reconstruction_loss(self, batch):
+        x, _ = batch  # Ignore labels
+        dims = np.prod(x.shape[1:])
+        x_recon, ze, zq, indices, KL_loss, commit_loss = self(x)
+        recons_loss = F.mse_loss(x_recon, x, reduction='none').sum(dim=(1,2,3)).mean() / dims
+        commit_loss = commit_loss / dims
+        total_loss = recons_loss  + commit_loss
+        
+        return {
+            'reconstruction_loss': recons_loss,
+            'quantization_loss': commit_loss,
+            'total_loss': total_loss
+        }
+
+    def test_step(self, batch, batch_idx):
+        loss_dict = self._get_reconstruction_loss(batch)
+        self.log('test_total_loss', loss_dict['total_loss'])
+        self.log('test_reconstruction_loss', loss_dict['reconstruction_loss'])
+        self.log('test_quantization_loss', loss_dict['quantization_loss'])
+        return loss_dict['total_loss']
 
     def configure_optimizers(self):
 
@@ -366,11 +388,11 @@ if __name__ == "__main__":
     
     # Create model
     model = VQVAE(
-        in_channels=1,
+        in_channels=2,
         hidden_dim=128,
         num_res_blocks=2,
         codebook_dim=32,
-        codebook_slots=512
+        codebook_slots=256
     )
     
     # Forward pass

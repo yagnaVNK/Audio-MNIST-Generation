@@ -18,28 +18,28 @@ class LightningAudioClassifier(pl.LightningModule):
         # CNN Architecture
         self.features = nn.Sequential(
             # First Conv Block
-            nn.Conv2d(2, 32, kernel_size=3, padding=1), # (2, 128, 173) -> (32, 128, 80)
+            nn.Conv2d(2, 32, kernel_size=3, padding=1), # (2, 256, 32) -> (32, 256, 32)
             nn.BatchNorm2d(32),
             nn.ReLU(),
             nn.MaxPool2d(2),
             nn.Dropout(0.3),
             
             # Second Conv Block
-            nn.Conv2d(32, 64, kernel_size=3, padding=1), # (32, 128, 40) -> (64, 64, 20)
+            nn.Conv2d(32, 64, kernel_size=3, padding=1),  
             nn.BatchNorm2d(64),
             nn.ReLU(),
             nn.MaxPool2d(2),
             nn.Dropout(0.3),
             
             # Third Conv Block
-            nn.Conv2d(64, 128, kernel_size=3, padding=1), # (64, 64, 20) -> (128, 32, 10)
+            nn.Conv2d(64, 128, kernel_size=3, padding=1),
             nn.BatchNorm2d(128),
             nn.ReLU(),
             nn.MaxPool2d(2),
             nn.Dropout(0.3),
             
             # Fourth Conv Block
-            nn.Conv2d(128, 256, kernel_size=3, padding=1), # (128, 32, 10) -> (256, 16, 5)
+            nn.Conv2d(128, 256, kernel_size=3, padding=1), 
             nn.BatchNorm2d(256),
             nn.ReLU(),
             nn.MaxPool2d(2),
@@ -48,7 +48,7 @@ class LightningAudioClassifier(pl.LightningModule):
         
         # Classifier layers
         self.classifier = nn.Sequential(
-            nn.Linear(256*16*5 , 512), # (1, 256*16*5) -> (512)
+            nn.Linear(256*16*2 , 512), # (1, 256*8*10) -> (512)
             nn.ReLU(),
             nn.Dropout(0.5),
             nn.Linear(512, num_classes) # (512) -> (10)
@@ -71,8 +71,8 @@ class LightningAudioClassifier(pl.LightningModule):
     def forward(self, x):
         x=x.float()
         # Pass through CNN
-        x = self.features(x) # (2, 128, 352) -> (256, 16, 44)
-        x = x.view(x.size(0), -1)  # (256, 16, 44) -> (1, 256*16*44)
+        x = self.features(x) # (2, 128, 173) -> ( 256, 16, 2)
+        x = x.view(x.size(0), -1)   
         x = self.classifier(x)
         return x
 

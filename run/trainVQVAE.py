@@ -10,8 +10,8 @@ from pytorch_lightning.loggers import TensorBoardLogger
 from torch.utils.data import DataLoader, random_split
 import torchvision.transforms as T
 from pathlib import Path
-from src.VQVAE import VQVAE
-#from src.VQVAE_monai import VQVAE
+#from src.VQVAE import VQVAE
+from src.VQVAE_monai import VQVAE
 from src.Dataset import AudioMNIST
 from src.custom_transforms import TrimSilence, FixLength
 import scipy
@@ -24,7 +24,7 @@ class VQVAETrainer:
         num_workers=4,
         max_epochs=20,
         accelerator='auto',
-        devices=[0]
+        devices=[0,1]
     ):
         self.data_dir = data_dir
         self.batch_size = batch_size
@@ -125,7 +125,7 @@ class VQVAETrainer:
             os.makedirs('saved_models')
 
         
-        torch.save(self.model, 'saved_models/vqvae.pth')
+        torch.save(self.model, 'saved_models/vqvae_monai.pth')
 
         #self.model = torch.load('saved_models/vqvae.pth')
 
@@ -221,7 +221,7 @@ def main():
         data_dir='../Data',
         batch_size=32,
         num_workers=4,
-        max_epochs=50
+        max_epochs=200
     )
     
     # Train model

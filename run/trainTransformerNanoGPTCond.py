@@ -17,7 +17,7 @@ from src.Transformer import *
 
 if __name__ == '__main__':
     # Hyperparameters and setup
-    epochs = 30
+    epochs = 50
     TRANSFORMER_MODEL_PATH = f'saved_models/NanoGPT_Cond2_Transformer_epochs_{epochs}.pt'
     device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
     VQVAE_PATH = 'saved_models/vqvae_monai.pth'

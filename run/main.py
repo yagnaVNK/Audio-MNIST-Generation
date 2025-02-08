@@ -47,8 +47,8 @@ def load_models():
     """Load models with proper device mapping"""
     try:
         VQVAE_PATH = 'saved_models/vqvae_monai.pth'
-        MONAI_TRANSFORMER_MODEL_PATH = 'saved_models/MONAI_Cond_Transformer_epochs_30.pt'
-        TRANSFORMER_MODEL_PATH = 'saved_models/NanoGPT_Cond2_Transformer_epochs_30.pt'
+        MONAI_TRANSFORMER_MODEL_PATH = 'saved_models/MONAI_Cond_Transformer_epochs_50.pt'
+        TRANSFORMER_MODEL_PATH = 'saved_models/NanoGPT_Cond2_Transformer_epochs_50.pt'
         
         device = get_device()
         print(f"Using device: {device}")
@@ -162,4 +162,4 @@ async def generate_audio(request: GenerationRequest):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8956)

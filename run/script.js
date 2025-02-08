@@ -81,7 +81,7 @@ document.addEventListener('DOMContentLoaded', function() {
         generateBtn.disabled = true;
 
         try {
-            const response = await fetch('http://localhost:8000/api/generate', {
+            const response = await fetch('http://localhost:8956/api/generate', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -106,11 +106,11 @@ document.addEventListener('DOMContentLoaded', function() {
             timingInfo.style.display = 'block';
 
             // Update audio player
-            audioPlayer.src = `http://localhost:8000${data.audioUrl}`;
+            audioPlayer.src = `http://localhost:8956${data.audioUrl}`;
             audioSection.style.display = 'block';
 
             // Update spectrogram image
-            spectrogramImage.src = `http://localhost:8000${data.spectrogramUrl}`;
+            spectrogramImage.src = `http://localhost:8956${data.spectrogramUrl}`;
             spectrogramSection.style.display = 'block';
 
         } catch (err) {

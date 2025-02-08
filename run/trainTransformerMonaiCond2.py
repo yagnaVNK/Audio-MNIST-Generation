@@ -14,9 +14,9 @@ from src.TransformerMonai import *
 
 if __name__ == '__main__':
     # Hyperparameters and setup
-    epochs = 30
+    epochs = 50
     MONAI_TRANSFORMER_MODEL_PATH = f'saved_models/MONAI_Cond2_Transformer_epochs_{epochs}.pt'
-    device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
+    device = 'cuda:1' if torch.cuda.is_available() else 'cpu'
     VQVAE_PATH = 'saved_models/vqvae_monai.pth'
     batch_size = 32
     num_workers = 4
@@ -185,7 +185,7 @@ if __name__ == '__main__':
     plt.ylabel('Loss')
     plt.title('Training and Validation Loss')
     plt.legend()
-    plt.savefig(f'loss_curves_{epochs}.png')
+    plt.savefig(f'Monai_Cond2_loss_curves_{epochs}.png')
     plt.close()
 
     # Generation example

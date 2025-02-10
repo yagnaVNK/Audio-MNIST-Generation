@@ -1,0 +1,17 @@
+Data
+VirtualEnv
+/run/lightning_logs
+*.pyc
+/run/checkpoints/
+/run/src/__pycache__
+run/results
+*.pyc
+/run/src/__pycache__
+/run/src/__pycache__
+/venv
+/run/__pycache__
+/run/.ipynb_checkpoints
+/run/evaluation_results
+/run/src/__pycache__
+/run/src/.ipynb_checkpoints
+/run/src/Saved_datasets

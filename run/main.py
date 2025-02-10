@@ -125,9 +125,10 @@ async def generate_audio(request: GenerationRequest):
 
         # Generate unique filename
         unique_id = str(uuid.uuid4())
-        audio_filename = f"{unique_id}_audio.wav"
-        spec_filename = f"{unique_id}_spec.png"
-
+        # audio_filename = f"{unique_id}_audio.wav"
+        # spec_filename = f"{unique_id}_spec.png"
+        audio_filename = "sample_audio.wav"
+        spec_filename = "sample_spec.png"
         # Save spectrogram
         plt.figure(figsize=(10, 4))
         librosa.display.specshow(Img_fake[0])

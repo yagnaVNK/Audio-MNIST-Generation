@@ -211,7 +211,6 @@ torchattacks==3.5.1
 torchaudio==2.4.1+cu118
 torchinfo==1.8.0
 torchmetrics==1.4.1
-torchsig @ file:///home/yagna/Documents/GitHub/torchsig_new/torchsig
 torchsummary==1.5.1
 torchvision==0.19.1+cu118
 tornado==6.4.1

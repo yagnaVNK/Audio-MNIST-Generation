@@ -75,7 +75,7 @@ class Block(nn.Module):
         return x
 
 class TransformerModel(nn.Module):
-    def __init__(self, vocab_size=256, n_embd=256, block_size=352, n_head=8, n_layer=8, dropout=0.1):
+    def __init__(self, vocab_size=256, n_embd=256, block_size=352, n_head=8, n_layer=8, dropout=0.1,additional_vocab = 11):
         super().__init__()
         print("Initialized transformer")
         self.vocab_size = vocab_size
@@ -83,7 +83,7 @@ class TransformerModel(nn.Module):
         self.n_embd = n_embd
         
         # Token and position embeddings
-        self.token_embedding_table = nn.Embedding(vocab_size + 11, n_embd)
+        self.token_embedding_table = nn.Embedding(vocab_size + additional_vocab, n_embd)
         self.position_embedding_table = nn.Embedding(block_size + 2, n_embd)
         
         # Transformer blocks
@@ -92,7 +92,7 @@ class TransformerModel(nn.Module):
         ])
         
         self.ln_f = nn.LayerNorm(n_embd)
-        self.lm_head = nn.Linear(n_embd, vocab_size + 11)
+        self.lm_head = nn.Linear(n_embd, vocab_size + additional_vocab)
 
     def forward(self, idx, targets=None):
         B, T = idx.shape

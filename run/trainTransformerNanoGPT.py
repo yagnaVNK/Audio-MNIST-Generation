@@ -17,8 +17,8 @@ from src.Transformer import *
 
 if __name__ == '__main__':
     # Hyperparameters and setup
-    epochs = 50
-    TRANSFORMER_MODEL_PATH = f'saved_models/NanoGPT_Cond2_Transformer_epochs_{epochs}.pt'
+    epochs = 100
+    TRANSFORMER_MODEL_PATH = f'saved_models/NanoGPT_Transformer_epochs_{epochs}.pt'
     device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
     VQVAE_PATH = 'saved_models/vqvae_monai.pth'
     batch_size = 32
@@ -40,7 +40,7 @@ if __name__ == '__main__':
         block_size = 352,
         n_head = 8,
         n_layer = 8,
-        additional_vocab=11
+        additional_vocab=1
     ).to(device)
 
     # Data loading
@@ -78,13 +78,13 @@ if __name__ == '__main__':
             # Create input sequence: [BOS, LABEL+257, VQVAE_INDICES]
             input_seq = torch.cat([
                 torch.tensor([BOS_TOKEN], device=device, dtype=torch.long),
-                torch.tensor([257 + label[i].item()], device=device, dtype=torch.long),
+                #torch.tensor([257 + label[i].item()], device=device, dtype=torch.long),
                 vqvae_indices[i].long()  # Convert VQVAE indices to long
             ])
             
             # Create target sequence: [LABEL+257, VQVAE_INDICES, PAD]
             target_seq = torch.cat([
-                torch.tensor([257 + label[i].item()], device=device, dtype=torch.long),
+                #torch.tensor([257 + label[i].item()], device=device, dtype=torch.long),
                 vqvae_indices[i].long(),
                 torch.zeros(1, device=device, dtype=torch.long)
             ])
@@ -113,12 +113,12 @@ if __name__ == '__main__':
         for i in range(len(label)):
             input_seq = torch.cat([
                 torch.tensor([BOS_TOKEN], device=device, dtype=torch.long),
-                torch.tensor([257 + label[i].item()], device=device, dtype=torch.long),
+                #torch.tensor([257 + label[i].item()], device=device, dtype=torch.long),
                 vqvae_indices[i].long()
             ])
             
             target_seq = torch.cat([
-                torch.tensor([257 + label[i].item()], device=device, dtype=torch.long),
+                #torch.tensor([257 + label[i].item()], device=device, dtype=torch.long),
                 vqvae_indices[i].long(),
                 torch.zeros(1, device=device, dtype=torch.long)
             ])
@@ -190,14 +190,14 @@ if __name__ == '__main__':
     plt.ylabel('Loss')
     plt.title('Training and Validation Loss')
     plt.legend()
-    plt.savefig(f'Nano GPT loss curves {epochs} epochs.png')
+    plt.savefig(f'Nano GPT loss curves unconditional {epochs} epochs.png')
     plt.close()
 
     # Generation example
     print("Generating example sequence...")
     label = 5
-    context = torch.tensor([[BOS_TOKEN, 257 + label]], dtype=torch.long, device=device)
+    context = torch.tensor([[BOS_TOKEN]], dtype=torch.long, device=device)
     generated = m.generate(context, max_new_tokens=352)
-    indices = generated[0, 2:]
+    indices = generated[0, 1:]
     reshaped_indices = indices.view(1, 32, 11)
     print("Generated indices shape:", reshaped_indices.shape)

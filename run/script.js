@@ -1,7 +1,8 @@
 document.addEventListener('DOMContentLoaded', function() {
     // Get DOM elements
-    const digitInput = document.getElementById('digitInput');
+    const modelTypeSelect = document.getElementById('modelTypeSelect');
     const modelSelect = document.getElementById('modelSelect');
+    const digitInput = document.getElementById('digitInput');
     const generateBtn = document.getElementById('generateBtn');
     const errorDiv = document.getElementById('error');
     const loadingDiv = document.getElementById('loading');
@@ -21,14 +22,18 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Input validation and button enable/disable
     function validateInputs() {
-        const digit = digitInput.value;
+        const modelType = modelTypeSelect.value;
         const model = modelSelect.value;
+        const digit = digitInput.value;
         
-        const isValid = digit !== '' && 
-                       !isNaN(digit) && 
-                       parseInt(digit) >= 0 && 
-                       parseInt(digit) <= 9 && 
-                       model !== '';
+        let isValid = modelType !== '' && model !== '';
+        
+        if (modelType === 'conditional') {
+            isValid = isValid && digit !== '' && 
+                     !isNaN(digit) && 
+                     parseInt(digit) >= 0 && 
+                     parseInt(digit) <= 9;
+        }
         
         generateBtn.disabled = !isValid;
         return isValid;
@@ -38,18 +43,28 @@ document.addEventListener('DOMContentLoaded', function() {
     function resetDisplay() {
         errorDiv.style.display = 'none';
         loadingDiv.style.display = 'none';
+        timingInfo.style.display = 'none';
+        audioSection.style.display = 'none';
+        spectrogramSection.style.display = 'none';
     }
 
-    // Prevent form submission on Enter key
-    digitInput.addEventListener('keypress', function(e) {
-        if (e.key === 'Enter') {
-            e.preventDefault();
-            if (validateInputs()) {
-                generateBtn.click();
-            }
+    // Model type selection handler
+    modelTypeSelect.addEventListener('change', function() {
+        const modelType = this.value;
+        modelSelect.disabled = modelType === '';
+        digitInput.disabled = modelType !== 'conditional';
+        
+        if (modelType !== 'conditional') {
+            digitInput.value = '';
         }
+        
+        validateInputs();
     });
 
+    // Model selection handler
+    modelSelect.addEventListener('change', validateInputs);
+
+    // Digit input handler
     digitInput.addEventListener('input', function(e) {
         // Only allow single digits
         if (e.target.value.length > 0) {
@@ -63,11 +78,18 @@ document.addEventListener('DOMContentLoaded', function() {
         validateInputs();
     });
 
-    modelSelect.addEventListener('change', validateInputs);
+    // Prevent form submission on Enter key
+    digitInput.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            if (validateInputs()) {
+                generateBtn.click();
+            }
+        }
+    });
 
-    // Handle generation
+    // Generate button handler
     generateBtn.addEventListener('click', async function(e) {
-        // Prevent any default form submission
         e.preventDefault();
         
         if (!validateInputs()) return;
@@ -75,9 +97,10 @@ document.addEventListener('DOMContentLoaded', function() {
         resetDisplay();
         loadingDiv.style.display = 'block';
         
-        // Disable inputs during generation
-        digitInput.disabled = true;
+        // Disable all inputs during generation
+        modelTypeSelect.disabled = true;
         modelSelect.disabled = true;
+        digitInput.disabled = true;
         generateBtn.disabled = true;
 
         try {
@@ -87,8 +110,9 @@ document.addEventListener('DOMContentLoaded', function() {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    digit: parseInt(digitInput.value),
+                    digit: modelTypeSelect.value === 'conditional' ? parseInt(digitInput.value) : null,
                     model: modelSelect.value,
+                    model_type: modelTypeSelect.value
                 }),
             });
 
@@ -114,12 +138,14 @@ document.addEventListener('DOMContentLoaded', function() {
             spectrogramSection.style.display = 'block';
 
         } catch (err) {
+            console.error('Error:', err);
             errorDiv.textContent = 'Failed to generate audio. Please try again.';
             errorDiv.style.display = 'block';
         } finally {
             // Re-enable inputs
-            digitInput.disabled = false;
-            modelSelect.disabled = false;
+            modelTypeSelect.disabled = false;
+            modelSelect.disabled = modelTypeSelect.value === '';
+            digitInput.disabled = modelTypeSelect.value !== 'conditional';
             validateInputs();
             loadingDiv.style.display = 'none';
         }

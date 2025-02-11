@@ -14,8 +14,8 @@ from src.TransformerMonai import *
 
 if __name__ == '__main__':
     # Hyperparameters and setup
-    epochs = 50
-    MONAI_TRANSFORMER_MODEL_PATH = f'saved_models/MONAI_Cond2_Transformer_epochs_{epochs}.pt'
+    epochs = 100
+    MONAI_TRANSFORMER_MODEL_PATH = f'saved_models/MONAI_Transformer_epochs_{epochs}.pt'
     device = 'cuda:1' if torch.cuda.is_available() else 'cpu'
     VQVAE_PATH = 'saved_models/vqvae_monai.pth'
     batch_size = 32
@@ -37,7 +37,8 @@ if __name__ == '__main__':
         num_layers=6,
         vocab_size=vocab_size,
         max_len=block_size,
-        block_size=block_size
+        block_size=block_size,
+        additional_vocab = 1
     ).to(device)
 
     # Data loading
@@ -75,13 +76,13 @@ if __name__ == '__main__':
             # Create input sequence: [BOS, LABEL+257, VQVAE_INDICES]
             input_seq = torch.cat([
                 torch.tensor([BOS_TOKEN], device=device, dtype=torch.long),
-                torch.tensor([257 + label[i].item()], device=device, dtype=torch.long),
+                #torch.tensor([257 + label[i].item()], device=device, dtype=torch.long),
                 vqvae_indices[i].long()  # Convert VQVAE indices to long
             ])
             
             # Create target sequence: [LABEL+257, VQVAE_INDICES, PAD]
             target_seq = torch.cat([
-                torch.tensor([257 + label[i].item()], device=device, dtype=torch.long),
+                #torch.tensor([257 + label[i].item()], device=device, dtype=torch.long),
                 vqvae_indices[i].long(),
                 torch.zeros(1, device=device, dtype=torch.long)
             ])
@@ -110,12 +111,12 @@ if __name__ == '__main__':
         for i in range(len(label)):
             input_seq = torch.cat([
                 torch.tensor([BOS_TOKEN], device=device, dtype=torch.long),
-                torch.tensor([257 + label[i].item()], device=device, dtype=torch.long),
+                #torch.tensor([257 + label[i].item()], device=device, dtype=torch.long),
                 vqvae_indices[i].long()
             ])
             
             target_seq = torch.cat([
-                torch.tensor([257 + label[i].item()], device=device, dtype=torch.long),
+                #torch.tensor([257 + label[i].item()], device=device, dtype=torch.long),
                 vqvae_indices[i].long(),
                 torch.zeros(1, device=device, dtype=torch.long)
             ])
@@ -185,14 +186,14 @@ if __name__ == '__main__':
     plt.ylabel('Loss')
     plt.title('Training and Validation Loss')
     plt.legend()
-    plt.savefig(f'Monai_Cond2_loss_curves_{epochs}.png')
+    plt.savefig(f'Monai Transformer loss curves_{epochs}_epochs.png')
     plt.close()
 
     # Generation example
     print("Generating example sequence...")
     label = 5
-    context = torch.tensor([[BOS_TOKEN, 257 + label]], dtype=torch.long, device=device)
+    context = torch.tensor([[BOS_TOKEN]], dtype=torch.long, device=device)
     generated = m.generate(context, max_new_tokens=352)
-    indices = generated[0, 2:]
+    indices = generated[0, 1:]
     reshaped_indices = indices.view(1, 32, 11)
     print("Generated indices shape:", reshaped_indices.shape)

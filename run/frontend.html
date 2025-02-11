@@ -5,159 +5,27 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Audio Generator</title>
     <link rel="icon" type="image/x-icon" href="data:image/x-icon;base64,AAABAAEAEBAAAAEAIABoBAAAFgAAACgAAAAQAAAAIAAAAAEAIAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADdTQ1g8XEqwPFxKsD1cSrA9XEqwOVhGsDlYRrA3VEOwNlNCsAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAzUEEwPV5M/3OSfv9wkHz/cJB8/3CQfP9wkHz/aYh2/2iHdP81UkT/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA9Xkz/ucK2/7jAtf+4wLX/uMC1/7S7sf+xua//NlNF/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPV5M/7nCtv+4wLX/uMC1/7jAtf+0u7H/sbmv/zZTRf8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA9Xkz/ucK2/7jAtf+4wLX/tLux/7G5r/82U0X/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA9Xkz/ucK2/7jAtf+0u7H/sbmv/zZTRf8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD1eTP+5wrb/uMC1/7S7sf+xua//NlNF/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOFZF2ThWRf84VkX/OFZF/zhWRf84VkX/OFZF/zhWRf84VkX/OFZF/zhWRf84VkX/OFZF/zhWRdk4VkUYAAAAADlXRmY5V0b/cZF9/3GRff9xkX3/cZF9/3GRff9xkX3/cZF9/3GRff9xkX3/cZF9/3GRff85V0b/OVdGZgAAAAA5V0YKOVdG/73Guv+9xrr/vcW5/73Fuf+8xbn/vMW5/7zFuf+8xbn/vMW5/7zFuf+8xbn/OVdG/zlXRgoAAAAAOVdGCjlXRv+9xrr/vcW5/73Fuf+8xbn/vMW5/7zFuf+8xbn/vMW5/7zFuf+8xbn/vMW5/zlXRv85V0YKAAAAADlXRgo5V0b/vcW5/73Fuf+8xbn/vMW5/7zFuf+8xbn/vMW5/7zFuf+8xbn/vMW5/7zFuf85V0b/OVdGCgAAAAA5V0YKOVdG/73Fuf+8xbn/vMW5/7zFuf+8xbn/vMW5/7zFuf+8xbn/vMW5/7zFuf+8xbn/OVdG/zlXRgoAAAAAOVdGZjlXRv85V0b/OVdG/zlXRv85V0b/OVdG/zlXRv85V0b/OVdG/zlXRv85V0b/OVdG/zlXRv85V0ZmAAAAAA==">
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            line-height: 1.6;
-            padding: 20px;
-            background-color: #f5f5f5;
-        }
-
-        .container {
-            max-width: 800px;
-            margin: 0 auto;
-            background-color: white;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-        }
-
-        h1 {
-            text-align: center;
-            margin-bottom: 20px;
-            color: #333;
-        }
-
-        .input-group {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 20px;
-            margin-bottom: 20px;
-        }
-
-        input, select {
-            width: 100%;
-            padding: 10px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            font-size: 16px;
-        }
-
-        button {
-            width: 100%;
-            padding: 12px;
-            background-color: #0070f3;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            font-size: 16px;
-            cursor: pointer;
-            transition: background-color 0.2s;
-        }
-
-        button:hover {
-            background-color: #0051cc;
-        }
-
-        button:disabled {
-            background-color: #ccc;
-            cursor: not-allowed;
-        }
-
-        .error {
-            color: #dc2626;
-            background-color: #fee2e2;
-            padding: 10px;
-            border-radius: 4px;
-            margin-top: 10px;
-            display: none;
-        }
-
-        .results {
-            margin-top: 20px;
-        }
-
-        .result-section {
-            background-color: #f8f9fa;
-            padding: 15px;
-            border-radius: 4px;
-            margin-bottom: 15px;
-        }
-
-        .result-section h3 {
-            margin-bottom: 10px;
-            color: #333;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .timing-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 8px;
-        }
-
-        .timing-label {
-            font-weight: 500;
-        }
-
-        .audio-player {
-            width: 100%;
-            margin-top: 10px;
-        }
-
-        .spectrogram-image {
-            width: 100%;
-            height: auto;
-            border-radius: 4px;
-            margin-top: 10px;
-            border: 1px solid #ddd;
-        }
-
-        .loading {
-            display: none;
-            text-align: center;
-            margin: 20px 0;
-            padding: 20px;
-            background-color: #f8f9fa;
-            border-radius: 4px;
-        }
-
-        .loading-spinner {
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #0070f3;
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            animation: spin 1s linear infinite;
-            margin: 0 auto 10px;
-        }
-
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-
-        @media (max-width: 600px) {
-            .input-group {
-                grid-template-columns: 1fr;
-            }
-        }
-    </style>
+    <link rel="stylesheet" href="styles.css">
 </head>
 <body>
     <div class="container">
         <h1>Audio Generator</h1>
         
         <div class="input-container">
-            <div class="input-group">
+            <div class="model-selection">
+                <select id="modelTypeSelect">
+                    <option value="">Select model type</option>
+                    <option value="conditional">Conditional</option>
+                    <option value="unconditional">Unconditional</option>
+                </select>
+                <select id="modelSelect" disabled>
+                    <option value="">Select model</option>
+                    <option value="nanogpt">Nano GPT</option>
+                    <option value="monai">MONAI</option>
+                </select>
+            </div>
+
+            <div class="input-section">
                 <input 
                     type="text" 
                     id="digitInput" 
@@ -165,12 +33,8 @@
                     pattern="[0-9]"
                     maxlength="1"
                     autocomplete="off"
+                    disabled
                 >
-                <select id="modelSelect">
-                    <option value="">Select model</option>
-                    <option value="nanogpt">Nano GPT</option>
-                    <option value="monai">MONAI</option>
-                </select>
             </div>
 
             <button 

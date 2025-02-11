@@ -4,11 +4,11 @@ import torch.nn.functional as F
 from generative.networks.nets import DecoderOnlyTransformer
 
 class MonaiDecoderOnlyModel(nn.Module):
-    def __init__(self, d_model, nhead, num_layers, vocab_size, max_len, block_size):
+    def __init__(self, d_model, nhead, num_layers, vocab_size, max_len, block_size,additional_vocab):
         super().__init__()
         print("Initialized monai transformer with extended vocabulary")
         self.transformer = DecoderOnlyTransformer(
-            num_tokens=vocab_size + 11,
+            num_tokens=vocab_size + additional_vocab,
             max_seq_len=max_len + 2,
             attn_layers_dim=d_model,
             attn_layers_depth=num_layers,
@@ -17,7 +17,7 @@ class MonaiDecoderOnlyModel(nn.Module):
             embedding_dropout_rate=0.1
         )
         self.block_size = block_size + 2
-        self.lm_head = nn.Linear(d_model + 11 , vocab_size + 11)
+        self.lm_head = nn.Linear(d_model + additional_vocab , vocab_size + additional_vocab)
 
     def forward(self, idx):
         features = self.transformer(idx)

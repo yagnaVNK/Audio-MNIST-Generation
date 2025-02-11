@@ -9,105 +9,114 @@ import scipy
 import time
 import os
 import matplotlib.pyplot as plt
-from io import BytesIO
-import base64
 import uuid
 from fastapi.staticfiles import StaticFiles
-from src.Transformer import *
-from src.TransformerMonai import *
-from src.VQVAE_monai import *
 
 app = FastAPI()
 
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allows all origins
+    allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["*"],  # Allows all methods
-    allow_headers=["*"],  # Allows all headers
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
-# Create a directory for storing generated files
 UPLOAD_DIR = "static/generated"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
-
-# Serve static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 def get_device():
-    """Get the appropriate device with error handling"""
     if torch.cuda.is_available():
         device_count = torch.cuda.device_count()
         if device_count > 0:
-            return f'cuda:0'  # Always use the first available GPU
+            return f'cuda:0'
     return 'cpu'
 
 def load_models():
-    """Load models with proper device mapping"""
     try:
         VQVAE_PATH = 'saved_models/vqvae_monai.pth'
-        MONAI_TRANSFORMER_MODEL_PATH = 'saved_models/MONAI_Cond2_Transformer_epochs_50.pt'
-        TRANSFORMER_MODEL_PATH = 'saved_models/NanoGPT_Cond2_Transformer_epochs_50.pt'
+        MONAI_COND_PATH = 'saved_models/MONAI_Cond2_Transformer_epochs_50.pt'
+        NANOGPT_COND_PATH = 'saved_models/NanoGPT_Cond2_Transformer_epochs_50.pt'
+        MONAI_UNCOND_PATH = 'saved_models/MONAI_Transformer_epochs_50.pt'
+        NANOGPT_UNCOND_PATH = 'saved_models/NanoGPT_Transformer_epochs_50.pt'
         
         device = get_device()
         print(f"Using device: {device}")
         
-        # Load models with explicit device mapping
         vqvae = torch.load(VQVAE_PATH, map_location=device)
-        monai_model = torch.load(MONAI_TRANSFORMER_MODEL_PATH, map_location=device)
-        gpt_model = torch.load(TRANSFORMER_MODEL_PATH, map_location=device)
+        monai_cond = torch.load(MONAI_COND_PATH, map_location=device)
+        gpt_cond = torch.load(NANOGPT_COND_PATH, map_location=device)
+        monai_uncond = torch.load(MONAI_UNCOND_PATH, map_location=device)
+        gpt_uncond = torch.load(NANOGPT_UNCOND_PATH, map_location=device)
 
-        # Ensure models are on the correct device
+        models = {
+            'conditional': {
+                'monai': monai_cond.to(device),
+                'nanogpt': gpt_cond.to(device)
+            },
+            'unconditional': {
+                'monai': monai_uncond.to(device),
+                'nanogpt': gpt_uncond.to(device)
+            }
+        }
+
         vqvae = vqvae.to(device)
-        monai_model = monai_model.to(device)
-        gpt_model = gpt_model.to(device)
-
-        # Set to evaluation mode
+        
+        # Set all models to eval mode
         vqvae.eval()
-        monai_model.eval()
-        gpt_model.eval()
+        for model_type in models.values():
+            for model in model_type.values():
+                model.eval()
 
-        return vqvae, monai_model, gpt_model, device
+        return vqvae, models, device
     except Exception as e:
         print(f"Error loading models: {str(e)}")
         raise
 
-# Load models at startup
 try:
-    vqvae, monai_model, gpt_model, device = load_models()
+    vqvae, models, device = load_models()
 except Exception as e:
     print(f"Failed to load models: {str(e)}")
     raise
 
 class GenerationRequest(BaseModel):
-    digit: int
+    digit: int | None = None
     model: str
+    model_type: str
 
 @app.post("/api/generate")
 async def generate_audio(request: GenerationRequest):
-    if not 0 <= request.digit <= 9:
-        raise HTTPException(status_code=400, detail="Digit must be between 0 and 9")
+    if request.model_type not in ["conditional", "unconditional"]:
+        raise HTTPException(status_code=400, detail="Invalid model type")
     
     if request.model not in ["nanogpt", "monai"]:
         raise HTTPException(status_code=400, detail="Invalid model selection")
+    
+    if request.model_type == "conditional":
+        if request.digit is None or not 0 <= request.digit <= 9:
+            raise HTTPException(status_code=400, detail="Digit must be between 0 and 9 for conditional models")
 
     try:
-        # Time the indices generation
         start_time = time.time()
         BOS_TOKEN = 256
-        context = torch.tensor([[BOS_TOKEN, 257 + request.digit]], dtype=torch.long, device=device)
         
-        transformer_model = gpt_model if request.model == "nanogpt" else monai_model
-        with torch.no_grad():  # Add no_grad for inference
+        if request.model_type == "conditional":
+            context = torch.tensor([[BOS_TOKEN, 257 + request.digit]], dtype=torch.long, device=device)
+        else:
+            context = torch.tensor([[BOS_TOKEN]], dtype=torch.long, device=device)
+        
+        transformer_model = models[request.model_type][request.model]
+        with torch.no_grad():
             generated = transformer_model.generate(context, max_new_tokens=352)
-            indices = generated[0, 2:]
+            indices = generated[0, 2:] if request.model_type == "conditional" else generated[0, 1:]
             fake_indices = indices.view(1, 32, 11)
         indices_time = time.time() - start_time
 
-        # Time the spectrogram generation
+        # Generate spectrogram
         start_time = time.time()
-        with torch.no_grad():  # Add no_grad for inference
+        with torch.no_grad():
             fake_recon = vqvae.model.decode_samples(fake_indices)
             fake_recon_cpu = fake_recon[0].cpu().detach().numpy()
         
@@ -118,27 +127,24 @@ async def generate_audio(request: GenerationRequest):
         Img_fake = librosa.amplitude_to_db(np.abs(fake_recon_complex), ref=np.max)
         spec_time = time.time() - start_time
 
-        # Time the audio generation
+        # Generate audio
         start_time = time.time()
         _, audio = scipy.signal.istft(fake_recon_complex, 12000)
         audio_time = time.time() - start_time
 
-        # Generate unique filename
         unique_id = str(uuid.uuid4())
-        # audio_filename = f"{unique_id}_audio.wav"
-        # spec_filename = f"{unique_id}_spec.png"
-        audio_filename = "sample_audio.wav"
-        spec_filename = "sample_spec.png"
-        # Save spectrogram
+        audio_filename = f"{unique_id}_audio.wav"
+        spec_filename = f"{unique_id}_spec.png"
+
         plt.figure(figsize=(10, 4))
         librosa.display.specshow(Img_fake[0])
         plt.colorbar(format='%+2.0f dB')
-        plt.title(f'Generated Spectrogram - Digit {request.digit}')
+        title = f'Generated Spectrogram - {"Digit " + str(request.digit) if request.model_type == "conditional" else "Unconditional"}'
+        plt.title(title)
         plt.tight_layout()
         plt.savefig(os.path.join(UPLOAD_DIR, spec_filename))
         plt.close()
 
-        # Save audio
         array = audio
         array = array / np.max(np.abs(array)) if np.max(np.abs(array)) > 0 else array
         array = (array * 32767).astype(np.int16)
@@ -158,7 +164,7 @@ async def generate_audio(request: GenerationRequest):
         })
 
     except Exception as e:
-        print(f"Error during generation: {str(e)}")  # Add logging
+        print(f"Error during generation: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":

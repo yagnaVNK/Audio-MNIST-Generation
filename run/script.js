@@ -104,20 +104,32 @@ document.addEventListener('DOMContentLoaded', function() {
         generateBtn.disabled = true;
 
         try {
+            // Prepare request body
+            const requestBody = {
+                model: modelSelect.value,
+                model_type: modelTypeSelect.value
+            };
+
+            // Only include digit for conditional models
+            if (modelTypeSelect.value === 'conditional') {
+                requestBody.digit = parseInt(digitInput.value);
+            } else {
+                requestBody.digit = null;
+            }
+
+            console.log('Sending request:', requestBody); // Debug log
+
             const response = await fetch('http://localhost:8956/api/generate', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({
-                    digit: modelTypeSelect.value === 'conditional' ? parseInt(digitInput.value) : null,
-                    model: modelSelect.value,
-                    model_type: modelTypeSelect.value
-                }),
+                body: JSON.stringify(requestBody)
             });
 
             if (!response.ok) {
-                throw new Error('Generation failed');
+                const errorData = await response.json();
+                throw new Error(errorData.detail || 'Generation failed');
             }
 
             const data = await response.json();
@@ -139,7 +151,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
         } catch (err) {
             console.error('Error:', err);
-            errorDiv.textContent = 'Failed to generate audio. Please try again.';
+            errorDiv.textContent = err.message || 'Failed to generate audio. Please try again.';
             errorDiv.style.display = 'block';
         } finally {
             // Re-enable inputs

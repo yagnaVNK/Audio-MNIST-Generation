@@ -133,8 +133,10 @@ async def generate_audio(request: GenerationRequest):
         audio_time = time.time() - start_time
 
         unique_id = str(uuid.uuid4())
-        audio_filename = f"{unique_id}_audio.wav"
-        spec_filename = f"{unique_id}_spec.png"
+        #audio_filename = f"{unique_id}_audio.wav"
+        #spec_filename = f"{unique_id}_spec.png"
+        audio_filename = f"sample_audio.wav"
+        spec_filename = f"sample_spec.png"
 
         plt.figure(figsize=(10, 4))
         librosa.display.specshow(Img_fake[0])

@@ -6,354 +6,299 @@ import librosa.display
 import scipy
 from tqdm import tqdm
 import os
-from IPython.display import Audio
-import soundfile as sf
+from torchvision import transforms as T
 from custom_transforms import TrimSilence, FixLength
 from src.Dataset import AudioMNIST
-import torchvision.transforms as T
 from top_pr import compute_top_pr as TopPR
-from src.Transformer import *
-from src.TransformerMonai import *
 
 device = 'cuda:0'
 
-def generate_batch_samples(transformer_model, model, dataset_length, batch_size=32, 
-                         output_dir="batch_generated", model_name="model"):
+def compute_metrics(real_data, fake_data):
     """
-    Generate fake samples in batches matching the dataset length and save audio/spectrograms
-    Returns: Tuple of (specs, audio) as numpy arrays
-    """
-    import numpy as np
-    import torch
-    from tqdm import tqdm
-    from scipy.io.wavfile import write
-    
-    os.makedirs(output_dir, exist_ok=True)
-    os.makedirs(f"{output_dir}/audio", exist_ok=True)
-    os.makedirs(f"{output_dir}/specs", exist_ok=True)
-    
-    # Calculate samples per class to match dataset length
-    samples_per_class = dataset_length // 10
-    
-    all_specs = []
-    all_audio = []
-    BOS_TOKEN = 256
-    
-    for label in range(10):
-        print(f"\nGenerating batch samples for label {label}")
-        
-        # Calculate number of full batches and remaining samples
-        num_full_batches = samples_per_class // batch_size
-        remaining_samples = samples_per_class % batch_size
-        
-        # Generate full batches
-        for batch_idx in tqdm(range(num_full_batches)):
-            # Create batch of contexts
-            batch_contexts = torch.tensor([[BOS_TOKEN, 257 + label] for _ in range(batch_size)], 
-                                       dtype=torch.long, device=device)
-            
-            # Generate indices for entire batch
-            generated_batch = transformer_model.generate(batch_contexts, max_new_tokens=352)
-            indices_batch = generated_batch[:, 2:]
-            fake_indices_batch = indices_batch.view(batch_size, 32, 11)
-            
-            # Get reconstructions for batch
-            fake_recon_batch = model.model.decode_samples(fake_indices_batch)
-            
-            # Process each sample in batch
-            for sample_idx, fake_recon in enumerate(fake_recon_batch):
-                fake_recon_cpu = fake_recon.cpu().detach().numpy()
-                
-                # Convert to complex
-                tmp_tensor = fake_recon_cpu.reshape(2, fake_recon_cpu.shape[1]*fake_recon_cpu.shape[2])
-                complex_data = tmp_tensor[0,:] + 1j * tmp_tensor[1,:]
-                fake_recon_complex = complex_data.reshape(1, fake_recon_cpu.shape[1], fake_recon_cpu.shape[2])
-                
-                # Generate spectrogram
-                Img_fake = librosa.amplitude_to_db(np.abs(fake_recon_complex), ref=np.max)
-                all_specs.append(Img_fake)
-                
-                # Generate audio
-                _, audio = scipy.signal.istft(fake_recon_complex, 12000)
-                all_audio.append(audio)
-                
-                # Save spectrogram
-                plt.figure(figsize=(10, 4))
-                librosa.display.specshow(Img_fake[0])
-                plt.colorbar(format='%+2.0f dB')
-                plt.title(f'{model_name} - Label {label} Batch {batch_idx} Sample {sample_idx}')
-                plt.tight_layout()
-                plt.savefig(f'{output_dir}/specs/{model_name}_label{label}_batch{batch_idx}_sample{sample_idx}.png')
-                plt.close()
-                
-                # Save audio
-                array = audio
-                array = array / np.max(np.abs(array)) if np.max(np.abs(array)) > 0 else array
-                array = (array * 32767).astype(np.int16)
-                write(f'{output_dir}/audio/{model_name}_label{label}_batch{batch_idx}_sample{sample_idx}.wav', 12000, array.T)
-        
-        # Handle remaining samples
-        if remaining_samples > 0:
-            batch_contexts = torch.tensor([[BOS_TOKEN, 257 + label] for _ in range(remaining_samples)], 
-                                       dtype=torch.long, device=device)
-            generated_batch = transformer_model.generate(batch_contexts, max_new_tokens=352)
-            indices_batch = generated_batch[:, 2:]
-            fake_indices_batch = indices_batch.view(remaining_samples, 32, 11)
-            
-            fake_recon_batch = model.model.decode_samples(fake_indices_batch)
-            
-            for sample_idx, fake_recon in enumerate(fake_recon_batch):
-                fake_recon_cpu = fake_recon.cpu().detach().numpy()
-                tmp_tensor = fake_recon_cpu.reshape(2, fake_recon_cpu.shape[1]*fake_recon_cpu.shape[2])
-                complex_data = tmp_tensor[0,:] + 1j * tmp_tensor[1,:]
-                fake_recon_complex = complex_data.reshape(1, fake_recon_cpu.shape[1], fake_recon_cpu.shape[2])
-                
-                Img_fake = librosa.amplitude_to_db(np.abs(fake_recon_complex), ref=np.max)
-                all_specs.append(Img_fake)
-                
-                _, audio = scipy.signal.istft(fake_recon_complex, 12000)
-                all_audio.append(audio)
-                
-                # Save spectrogram
-                plt.figure(figsize=(10, 4))
-                librosa.display.specshow(Img_fake[0])
-                plt.colorbar(format='%+2.0f dB')
-                plt.title(f'{model_name} - Label {label} Remaining Sample {sample_idx}')
-                plt.tight_layout()
-                plt.savefig(f'{output_dir}/specs/{model_name}_label{label}_remaining_sample{sample_idx}.png')
-                plt.close()
-                
-                # Save audio
-                array = audio
-                array = array / np.max(np.abs(array)) if np.max(np.abs(array)) > 0 else array
-                array = (array * 32767).astype(np.int16)
-                write(f'{output_dir}/audio/{model_name}_label{label}_remaining_sample{sample_idx}.wav', 12000, array.T)
-    
-    # Convert to numpy arrays
-    all_specs = np.array(all_specs)
-    all_audio = np.array(all_audio)
-    
-    # Save arrays
-    np.save(f"{output_dir}/{model_name}_specs.npy", all_specs)
-    np.save(f"{output_dir}/{model_name}_audio.npy", all_audio)
-    
-    return all_specs, all_audio
+    Compute metrics using Top PR framework for real and fake datasets.
 
-def generate_and_save_samples(transformer_model, model, dataset, num_samples_per_class=100, 
-                            output_dir="generated_samples", model_name="model"):
-    """
-    Generate fake samples and save both audio and spectrograms
-    """
-    import numpy as np
-    from scipy.io.wavfile import write
-    
-    os.makedirs(output_dir, exist_ok=True)
-    os.makedirs(f"{output_dir}/audio", exist_ok=True)
-    os.makedirs(f"{output_dir}/specs", exist_ok=True)
-    
-    all_specs = []
-    all_audio = []
-    BOS_TOKEN = 256
-    
-    for label in range(10):
-        print(f"\nGenerating samples for label {label}")
-        for i in tqdm(range(num_samples_per_class)):
-            # Generate indices
-            context = torch.tensor([[BOS_TOKEN, 257 + label]], dtype=torch.long, device=device)
-            generated = transformer_model.generate(context, max_new_tokens=352)
-            indices = generated[0, 2:]
-            fake_indices = indices.view(1, 32, 11)
-            
-            # Get reconstruction
-            fake_recon = model.model.decode_samples(fake_indices)
-            fake_recon_cpu = fake_recon[0].cpu().detach().numpy()
-            
-            # Convert to complex directly without denormalization
-            tmp_tensor = fake_recon_cpu.reshape(2, fake_recon_cpu.shape[1]*fake_recon_cpu.shape[2])
-            complex_data = tmp_tensor[0,:] + 1j * tmp_tensor[1,:]
-            fake_recon_complex = complex_data.reshape(1, fake_recon_cpu.shape[1], fake_recon_cpu.shape[2])
-            
-            # Generate spectrogram
-            Img_fake = librosa.amplitude_to_db(np.abs(fake_recon_complex), ref=np.max)
-            all_specs.append(Img_fake)
-            
-            # Generate audio
-            _, audio = scipy.signal.istft(fake_recon_complex, 12000)
-            all_audio.append(audio)
-            
-            # Save individual samples
-            if i < 10:
-                plt.figure(figsize=(10, 4))
-                librosa.display.specshow(Img_fake[0])
-                plt.colorbar(format='%+2.0f dB')
-                plt.title(f'{model_name} - Label {label} Sample {i}')
-                plt.tight_layout()
-                plt.savefig(f'{output_dir}/specs/{model_name}_label{label}_sample{i}.png')
-                plt.close()
-                
-                # Normalize audio to 16-bit int range
-                array = audio
-                array = array / np.max(np.abs(array)) if np.max(np.abs(array)) > 0 else array
-                array = (array * 32767).astype(np.int16)
-                
-                output_path = f'{output_dir}/audio/{model_name}_label{label}_sample{i}.wav'
-                write(output_path, 12000, array.T)
-    
-    return np.array(all_specs), np.array(all_audio)
+    Parameters:
+    - real_dataset_path: Path to the NumPy file containing the real dataset.
+    - fake_dataset_path: Path to the NumPy file containing the fake dataset.
 
-def plot_comparison(real_specs, monai_specs, gpt_specs, output_dir):
+    Returns:
+    - A dictionary containing fidelity, diversity, and Top_F1 metrics.
     """
-    Plot comparison of real and generated spectrograms
+    # Load the datasets
+    if isinstance(real_data, (str, bytes, os.PathLike)):
+        real_data = np.load(real_data)
+    if isinstance(fake_data, (str, bytes, os.PathLike)):
+        fake_data = np.load(fake_data)
+
+    # Ensure both datasets are flattened in the signal dimension
+    real_data = real_data.reshape(real_data.shape[0], -1)
+    fake_data = fake_data.reshape(fake_data.shape[0], -1)
+
+    # Compute metrics using TopPR
+    Top_PR = TopPR(
+        real_features=real_data,
+        fake_features=fake_data,
+        alpha=0.1,  # Weight for fidelity and diversity tradeoff
+        kernel="cosine",  # Kernel type
+        random_proj=True,  # Whether to use random projection
+        f1_score=True  # Whether to compute Top_F1
+    )
+
+    # Extract the required metrics
+    fidelity = Top_PR.get("fidelity")
+    diversity = Top_PR.get("diversity")
+    top_f1 = Top_PR.get("Top_F1")
+
+    # Print and return the metrics
+    print(f"Fidelity: {fidelity}, Diversity: {diversity}, Top_F1: {top_f1}")
+    return {"fidelity": fidelity, "diversity": diversity, "Top_F1": top_f1}
+
+
+def plot_spectrograms(reconstructions, labels, folder, idx, save_prefix="reconstruction"):
     """
-    os.makedirs(output_dir + "/comparisons", exist_ok=True)
+    Plot spectrograms for a batch of reconstructions.
+    """
+    os.makedirs(folder, exist_ok=True)
     
-    for label in range(10):
-        plt.figure(figsize=(15, 5))
+    # Process each reconstruction
+    for i, rec in enumerate(reconstructions):
+        if rec.nelement() == 0:
+            continue
+            
+        # Convert reconstruction to complex spectrogram
+        rec_cpu = rec.cpu().detach().numpy()
+        tmp_tensor = rec_cpu.reshape(2, rec_cpu.shape[1] * rec_cpu.shape[2])
+        complex_data = tmp_tensor[0, :] + 1j * tmp_tensor[1, :]
+        complex_spec = complex_data.reshape(1, rec_cpu.shape[1], rec_cpu.shape[2])
         
-        # Plot real sample
-        plt.subplot(1, 3, 1)
-        librosa.display.specshow(real_specs[label][0])
-        plt.title(f'Real - Label {label}')
+        # Generate spectrogram
+        spec_db = librosa.amplitude_to_db(np.abs(complex_spec), ref=np.max)
+        
+        # Plot spectrogram
+        plt.figure(figsize=(10, 4))
+        librosa.display.specshow(spec_db[0])
         plt.colorbar(format='%+2.0f dB')
-        
-        # Plot MONAI sample
-        plt.subplot(1, 3, 2)
-        librosa.display.specshow(monai_specs[label][0])
-        plt.title(f'MONAI - Label {label}')
-        plt.colorbar(format='%+2.0f dB')
-        
-        # Plot NanoGPT sample
-        plt.subplot(1, 3, 3)
-        librosa.display.specshow(gpt_specs[label][0])
-        plt.title(f'NanoGPT - Label {label}')
-        plt.colorbar(format='%+2.0f dB')
-        
+        plt.title(f'Label {labels[i]}')
         plt.tight_layout()
-        plt.savefig(f'{output_dir}/comparisons/comparison_label{label}.png')
+        
+        # Save plot
+        plt.savefig(os.path.join(folder, f'{save_prefix}_{idx}_label_{labels[i]}.png'))
         plt.close()
 
-def compute_metrics(real_dataset, fake_dataset):
+def generate_fake_dataset(transformer_model, vqvae_model, output_file, is_conditional=True, 
+                         num_labels=10, BOS_TOKEN=256, samples_per_label=3000, batch_size=30):
     """
-    Compute Top-PR metrics
+    Generate a fake dataset using transformer and VQVAE models.
     """
-    real_flat = real_dataset.reshape(real_dataset.shape[0], -1)
-    fake_flat = fake_dataset.reshape(fake_dataset.shape[0], -1)
+    all_specs = []
+    all_audio = []
+    fake_indices = []
+    steps_per_label = samples_per_label // batch_size
     
-    # Compute metrics using TopPR
-    metrics = TopPR(
-        real_features=real_flat,
-        fake_features=fake_flat,
-        alpha=0.1,
-        kernel="cosine",
-        random_proj=True,
-        f1_score=True
-    )
+    for label in range(num_labels):
+        print(f"Generating data for label {label}...")
+        for _ in tqdm(range(steps_per_label)):
+            # Generate indices
+            if is_conditional:
+                context = torch.tensor([[BOS_TOKEN, BOS_TOKEN + 1 + label]] * batch_size).to(device)
+                new_indices = transformer_model.generate(context, max_new_tokens=352)
+                new_indices = new_indices[:, 2:]  # Remove BOS and label tokens
+            else:
+                context = torch.tensor([[BOS_TOKEN]] * batch_size).to(device)
+                new_indices = transformer_model.generate(context, max_new_tokens=352)
+                new_indices = new_indices[:, 1:]  # Remove only BOS token
+            
+            fake_indices.append(new_indices.cpu().numpy())
+            
+            # Reshape indices for VQVAE decoding
+            reshaped_indices = new_indices.view(-1, 32, 11)
+            
+            # Decode the generated indices
+            reconstructions = vqvae_model.model.decode_samples(reshaped_indices)
+            
+            # Process each reconstruction
+            for rec in reconstructions:
+                rec_cpu = rec.cpu().detach().numpy()
+                
+                # Convert to complex spectrogram
+                tmp_tensor = rec_cpu.reshape(2, rec_cpu.shape[1] * rec_cpu.shape[2])
+                complex_data = tmp_tensor[0, :] + 1j * tmp_tensor[1, :]
+                complex_spec = complex_data.reshape(1, rec_cpu.shape[1], rec_cpu.shape[2])
+                
+                # Generate spectrogram
+                spec_db = librosa.amplitude_to_db(np.abs(complex_spec), ref=np.max)
+                all_specs.append(spec_db)
+                
+                # Generate audio
+                _, audio = scipy.signal.istft(complex_spec, 12000)
+                all_audio.append(audio)
     
-    return {
-        "fidelity": metrics.get("fidelity"),
-        "diversity": metrics.get("diversity"),
-        "top_f1": metrics.get("Top_F1")
-    }
+    # Convert to numpy arrays and save
+    final_specs = np.array(all_specs)
+    final_audio = np.array(all_audio)
+    
+    np.save(f"{output_file}_specs.npy", final_specs)
+    np.save(f"{output_file}_audio.npy", final_audio)
+    
+    return fake_indices, final_specs, final_audio
+
+def plot_codebook_histograms(indices, path):
+    """
+    Plot histograms of the quantization indices.
+    """
+    os.makedirs(path, exist_ok=True)
+    
+    # Convert indices to numpy array and reshape
+    if isinstance(indices, list):
+        indices = np.concatenate(indices)
+    
+    if indices.ndim > 2:
+        indices = indices.reshape(-1, indices.shape[-1])
+    
+    # Split indices by class
+    samples_per_class = len(indices) // 10
+    indices_per_class = np.array_split(indices, 10)
+    
+    # Plot histogram for each class
+    for i, class_indices in enumerate(indices_per_class):
+        plt.figure(figsize=(10, 6))
+        flat_indices = class_indices.flatten()
+        plt.hist(flat_indices, bins=min(64, len(np.unique(flat_indices))), 
+                color='blue', alpha=0.7)
+        plt.title(f'Histogram for Class: {i}')
+        plt.xlabel('Token Index')
+        plt.ylabel('Frequency')
+        plt.grid(True)
+        plt.savefig(os.path.join(path, f"Histogram_Class_{i}.png"))
+        plt.close()
+
+def save_real_dataset(dataset, output_file):
+    """
+    Process and save the real dataset.
+    """
+    all_specs = []
+    all_audio = []
+    
+    print("Processing real dataset...")
+    for data, _ in tqdm(dataset):
+        # Convert to complex spectrogram
+        complex_data = dataset.twod_to_complex(data.numpy())
+        
+        # Generate spectrogram
+        spec_db = librosa.amplitude_to_db(np.abs(complex_data), ref=np.max)
+        all_specs.append(spec_db)
+        
+        # Generate audio
+        _, audio = scipy.signal.istft(complex_data, 12000)
+        all_audio.append(audio)
+    
+    # Convert to numpy arrays and save
+    final_specs = np.array(all_specs)
+    final_audio = np.array(all_audio)
+    
+    np.save(f"{output_file}_specs.npy", final_specs)
+    np.save(f"{output_file}_audio.npy", final_audio)
+    
+    return final_specs, final_audio
 
 if __name__ == "__main__":
-    # Load models and dataset
+    # Create base evaluation folder
+    base_eval_folder = 'AudioMNIST_Evaluation'
+    os.makedirs(base_eval_folder, exist_ok=True)
+    BOS_TOKEN = 256
+    # Load models
+    print("Loading models...")
+    VQVAE_PATH = 'saved_models/vqvae_monai.pth'
+    MONAI_COND2_PATH = 'saved_models/MONAI_Cond2_Transformer_epochs_50.pt'
+    MONAI_UNCOND_PATH = 'saved_models/MONAI_Transformer_epochs_50.pt'
+    NANOGPT_COND2_PATH = 'saved_models/NanoGPT_Cond2_Transformer_epochs_50.pt'
+    NANOGPT_UNCOND_PATH = 'saved_models/NanoGPT_Transformer_epochs_50.pt'
+    
+    VQVAE = torch.load(VQVAE_PATH,weights_only=False).to(device)
+    monai_cond = torch.load(MONAI_COND2_PATH,weights_only=False).to(device)
+    monai_uncond = torch.load(MONAI_UNCOND_PATH,weights_only=False).to(device)
+    nanogpt_cond = torch.load(NANOGPT_COND2_PATH,weights_only=False).to(device)
+    nanogpt_uncond = torch.load(NANOGPT_UNCOND_PATH,weights_only=False).to(device)
+    
+    # Set models to eval mode
+    VQVAE.eval()
+    monai_cond.eval()
+    monai_uncond.eval()
+    nanogpt_cond.eval()
+    nanogpt_uncond.eval()
+    
+    # Load dataset
     data_dir = '../Data'
     transforms = [TrimSilence(5), FixLength(16000)]
     dataset = AudioMNIST(data_dir, transform=T.Compose(transforms))
-
-    # Create output directories
-    base_output_dir = "evaluation_results"
-    monai_output_dir = f"{base_output_dir}/monai"
-    gpt_output_dir = f"{base_output_dir}/nanogpt"
-    os.makedirs(base_output_dir, exist_ok=True)
-
-    # Load and check models
-    print("Loading models...")
-    VQVAE_PATH = 'saved_models/vqvae_monai.pth'
-    MONAI_TRANSFORMER_MODEL_PATH = 'saved_models/MONAI_Cond_Transformer_epochs_30.pt'
-    TRANSFORMER_MODEL_PATH = 'saved_models/NanoGPT_Cond2_Transformer_epochs_30.pt'
-
-    model = torch.load(VQVAE_PATH).to(device)
-    monai_model = torch.load(MONAI_TRANSFORMER_MODEL_PATH).to(device)
-    gpt_model = torch.load(TRANSFORMER_MODEL_PATH).to(device)
-
-    # Print model information
-    print("\nModel states:")
-    print(f"VQVAE model type: {type(model)}")
-    print(f"MONAI model type: {type(monai_model)}")
-    print(f"GPT model type: {type(gpt_model)}")
-
-    # Set models to eval mode
-    model.eval()
-    monai_model.eval()
-    gpt_model.eval()
+    samples_per_class = len(dataset) // 10
+    # Save real dataset
+    real_dataset_path = os.path.join(base_eval_folder, "real_dataset")
+    real_specs, real_audio = save_real_dataset(dataset, real_dataset_path)
     
-    # Get dataset length for batch generation
-    dataset_length = len(dataset)
-    print(f"\nTotal dataset length: {dataset_length}")
+    # Process each model
+    models = {
+        'MONAI_Conditional': (monai_cond, True),
+        'MONAI_Unconditional': (monai_uncond, False),
+        'NanoGPT_Conditional': (nanogpt_cond, True),
+        'NanoGPT_Unconditional': (nanogpt_uncond, False)
+    }
     
-    # Generate batch samples
-    print("\nGenerating MONAI batch samples...")
-    batch_monai_output_dir = f"{base_output_dir}/batch_monai"
-    batch_monai_specs, batch_monai_audio = generate_batch_samples(
-        monai_model, model, dataset_length,
-        batch_size=32,
-        output_dir=batch_monai_output_dir,
-        model_name="monai"
-    )
-    
-    print("\nGenerating NanoGPT batch samples...")
-    batch_gpt_output_dir = f"{base_output_dir}/batch_nanogpt"
-    batch_gpt_specs, batch_gpt_audio = generate_batch_samples(
-        gpt_model, model, dataset_length,
-        batch_size=32,
-        output_dir=batch_gpt_output_dir,
-        model_name="nanogpt"
-    )
-    
-    # Get all real samples
-    print("\nProcessing real samples...")
-    real_specs = []
-    real_audio = []
-    for data, label in tqdm(dataset):
-        # Convert to complex and get spectrogram
-        complex_data = dataset.twod_to_complex(data.numpy())
-        spec = librosa.amplitude_to_db(complex_data, ref=np.max)
-        real_specs.append(spec)
-        # Get audio
-        _, audio = scipy.signal.istft(complex_data, 12000)
-        real_audio.append(audio)
-    
-    real_specs = np.array(real_specs)
-    real_audio = np.array(real_audio)
-    
-    # Save real arrays
-    np.save(f"{base_output_dir}/real_specs.npy", real_specs)
-    np.save(f"{base_output_dir}/real_audio.npy", real_audio)
-    
-    # Compute batch metrics
-    print("\nComputing batch metrics...")
-    batch_monai_metrics = compute_metrics(real_specs, batch_monai_specs)
-    batch_gpt_metrics = compute_metrics(real_specs, batch_gpt_specs)
-    
-    print("\nBatch MONAI Metrics:")
-    print(f"Fidelity: {batch_monai_metrics['fidelity']:.4f}")
-    print(f"Diversity: {batch_monai_metrics['diversity']:.4f}")
-    print(f"Top F1: {batch_monai_metrics['top_f1']:.4f}")
-    
-    print("\nBatch NanoGPT Metrics:")
-    print(f"Fidelity: {batch_gpt_metrics['fidelity']:.4f}")
-    print(f"Diversity: {batch_gpt_metrics['diversity']:.4f}")
-    print(f"Top F1: {batch_gpt_metrics['top_f1']:.4f}")
-    
-    # Save metrics to file
-    with open(f"{base_output_dir}/metrics.txt", "w") as f:
-        f.write("MONAI Metrics:\n")
-        f.write(f"Fidelity: {batch_monai_metrics['fidelity']:.4f}\n")
-        f.write(f"Diversity: {batch_monai_metrics['diversity']:.4f}\n")
-        f.write(f"Top F1: {batch_monai_metrics['top_f1']:.4f}\n\n")
+    for model_name, (model, is_conditional) in models.items():
+        print(f"\nProcessing {model_name}...")
         
-        f.write("NanoGPT Metrics:\n")
-        f.write(f"Fidelity: {batch_gpt_metrics['fidelity']:.4f}\n")
-        f.write(f"Diversity: {batch_gpt_metrics['diversity']:.4f}\n")
-        f.write(f"Top F1: {batch_gpt_metrics['top_f1']:.4f}\n")
+        # Create model-specific folders
+        model_folder = os.path.join(base_eval_folder, f'{model_name}_results')
+        spec_folder = os.path.join(model_folder, 'Spectrograms')
+        histogram_folder = os.path.join(model_folder, 'CodebookHistograms')
+        os.makedirs(model_folder, exist_ok=True)
+        
+        # Generate fake dataset
+        fake_dataset_path = os.path.join(model_folder, f"fake_dataset_{model_name}")
+        fake_indices, fake_specs, fake_audio = generate_fake_dataset(
+            transformer_model=model,
+            vqvae_model=VQVAE,
+            output_file=fake_dataset_path,
+            is_conditional=is_conditional
+        )
+        
+        # Plot codebook histograms
+        plot_codebook_histograms(fake_indices, histogram_folder)
+        
+        # Generate sample spectrograms
+        for j in range(5):
+            all_reconstructions = []
+            labels = list(range(10))
+            
+            for i in labels:
+                if is_conditional:
+                    context = torch.tensor([[BOS_TOKEN, BOS_TOKEN + 1 + i]]).to(device)
+                    new_indices = model.generate(context, max_new_tokens=352)
+                    new_indices = new_indices[:, 2:]
+                else:
+                    context = torch.tensor([[BOS_TOKEN]]).to(device)
+                    new_indices = model.generate(context, max_new_tokens=352)
+                    new_indices = new_indices[:, 1:]
+
+                reshaped_indices = new_indices.view(1, 32, 11)
+                
+                reconstruction = VQVAE.model.decode_samples(reshaped_indices)
+                all_reconstructions.append(reconstruction.squeeze())
+            
+            all_reconstructions = torch.stack(all_reconstructions)
+            plot_spectrograms(all_reconstructions, labels, spec_folder, j, 
+                            save_prefix=f"{model_name}_sample")
+        
+        # Compute and print metrics
+        metrics = compute_metrics(real_specs,fake_specs)
+        
+        print(f"\nMetrics for {model_name}:")
+        print(f"Fidelity: {metrics['fidelity']:.4f}")
+        print(f"Diversity: {metrics['diversity']:.4f}")
+        print(f"Top F1: {metrics['Top_F1']:.4f}")
+        
+        # Save metrics
+        with open(os.path.join(model_folder, "metrics.txt"), "w") as f:
+            f.write(f"Fidelity: {metrics['fidelity']:.4f}\n")
+            f.write(f"Diversity: {metrics['diversity']:.4f}\n")
+            f.write(f"Top F1: {metrics['Top_F1']:.4f}\n")

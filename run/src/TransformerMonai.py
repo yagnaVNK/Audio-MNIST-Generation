@@ -6,6 +6,8 @@ from generative.networks.nets import DecoderOnlyTransformer
 class MonaiDecoderOnlyModel(nn.Module):
     def __init__(self, d_model, nhead, num_layers, vocab_size, max_len, block_size,additional_vocab):
         super().__init__()
+        self.additional_vocab= additional_vocab
+        self.vocab_size = vocab_size
         print("Initialized monai transformer with extended vocabulary")
         self.transformer = DecoderOnlyTransformer(
             num_tokens=vocab_size + additional_vocab,
@@ -31,7 +33,7 @@ class MonaiDecoderOnlyModel(nn.Module):
                 idx_cond = idx[:, -self.block_size:]
                 logits = self(idx_cond)
                 logits = logits[:, -1, :]
-                logits[:, 256:] = float('-inf')
+                logits[:, self.vocab_size:] = float('-inf')
                 probs = F.softmax(logits, dim=-1)
                 idx_next = torch.multinomial(probs, num_samples=1)
                 idx = torch.cat((idx, idx_next), dim=1)

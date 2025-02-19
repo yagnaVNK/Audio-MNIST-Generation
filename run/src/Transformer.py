@@ -124,7 +124,7 @@ class TransformerModel(nn.Module):
                 idx_cond = idx[:, -self.block_size:]
                 logits, _ = self(idx_cond)
                 logits = logits[:, -1, :]
-                logits[:, 256:] = float('-inf')
+                logits[:, self.vocab_size:] = float('-inf')
                 probs = F.softmax(logits, dim=-1)
                 idx_next = torch.multinomial(probs, num_samples=1)
                 idx = torch.cat((idx, idx_next), dim=1)

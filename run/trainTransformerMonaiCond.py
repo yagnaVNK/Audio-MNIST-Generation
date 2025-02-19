@@ -73,16 +73,16 @@ if __name__ == '__main__':
             vqvae_indices = vqvae_model.model.index_quantize(x).flatten(1)
         
         for i in range(len(label)):
-            # Create input sequence: [BOS, LABEL+257, VQVAE_INDICES]
+            # Create input sequence: [BOS, LABEL+BOS_TOKEN + 1, VQVAE_INDICES]
             input_seq = torch.cat([
                 torch.tensor([BOS_TOKEN], device=device, dtype=torch.long),
-                torch.tensor([257 + label[i].item()], device=device, dtype=torch.long),
+                torch.tensor([BOS_TOKEN + 1 + label[i].item()], device=device, dtype=torch.long),
                 vqvae_indices[i].long()  # Convert VQVAE indices to long
             ])
             
-            # Create target sequence: [LABEL+257, VQVAE_INDICES, PAD]
+            # Create target sequence: [LABEL+BOS_TOKEN + 1, VQVAE_INDICES, PAD]
             target_seq = torch.cat([
-                torch.tensor([257 + label[i].item()], device=device, dtype=torch.long),
+                torch.tensor([BOS_TOKEN + 1 + label[i].item()], device=device, dtype=torch.long),
                 vqvae_indices[i].long(),
                 torch.zeros(1, device=device, dtype=torch.long)
             ])
@@ -111,12 +111,12 @@ if __name__ == '__main__':
         for i in range(len(label)):
             input_seq = torch.cat([
                 torch.tensor([BOS_TOKEN], device=device, dtype=torch.long),
-                torch.tensor([257 + label[i].item()], device=device, dtype=torch.long),
+                torch.tensor([BOS_TOKEN + 1 + label[i].item()], device=device, dtype=torch.long),
                 vqvae_indices[i].long()
             ])
             
             target_seq = torch.cat([
-                torch.tensor([257 + label[i].item()], device=device, dtype=torch.long),
+                torch.tensor([BOS_TOKEN + 1 + label[i].item()], device=device, dtype=torch.long),
                 vqvae_indices[i].long(),
                 torch.zeros(1, device=device, dtype=torch.long)
             ])
@@ -192,7 +192,7 @@ if __name__ == '__main__':
     # Generation example
     print("Generating example sequence...")
     label = 5
-    context = torch.tensor([[BOS_TOKEN, 257 + label]], dtype=torch.long, device=device)
+    context = torch.tensor([[BOS_TOKEN, BOS_TOKEN + 1 + label]], dtype=torch.long, device=device)
     generated = m.generate(context, max_new_tokens=352)
     indices = generated[0, 2:]
     reshaped_indices = indices.view(1, 32, 11)

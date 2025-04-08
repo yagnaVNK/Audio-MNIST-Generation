@@ -27,7 +27,7 @@ if __name__ == '__main__':
     learning_rate = 1e-4
 
     # Load VQVAE model
-    vqvae_model = torch.load(VQVAE_PATH).to(device)
+    vqvae_model = torch.load(VQVAE_PATH,weights_only=False).to(device)
     vqvae_model.eval()  # Ensure VQVAE is in eval mode
 
     # Initialize transformer model
